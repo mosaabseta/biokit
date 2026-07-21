@@ -23,6 +23,10 @@ from .io import (
     parse_fastq,
     phred_scores,
 )
+from .approximate import (
+    naive_approximate_match,
+    approximate_match,
+)
 from .sequence import (
     clean,
     complement,
@@ -70,7 +74,7 @@ from .stats import (
     length_distribution,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # io
@@ -93,4 +97,6 @@ __all__ = [
     "hamming_distance", "edit_distance",
     # stats
     "summarize_fasta", "length_distribution",
+    # approximate matching
+    "naive_approximate_match", "approximate_match",
 ]
