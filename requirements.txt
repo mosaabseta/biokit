@@ -1,0 +1,10 @@
+# Core library: NO required dependencies (pure standard library).
+#
+# Optional features:
+#   biopython>=1.79   # only needed for the biokit.blast module
+#
+# To install the optional BLAST support:
+#   pip install biopython
+#
+# To run the test suite:
+#   pip install pytest

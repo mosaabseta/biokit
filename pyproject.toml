@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biokit-seq"
+version = "0.1.0"
+description = "A small, dependency-free bioinformatics toolkit: FASTA/FASTQ I/O, ORFs, k-mers, and exact matching (naive + Boyer-Moore)."
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT" }
+keywords = ["bioinformatics", "fasta", "orf", "kmer", "boyer-moore", "sequence"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Intended Audience :: Science/Research",
+]
+dependencies = []  # core library has NO required dependencies
+
+[project.optional-dependencies]
+blast = ["biopython>=1.79"]   # only needed for biokit.blast
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/mosaabseta/biokit"
+Issues = "https://github.com/mosaabseta/biokit/issues"
+
+[tool.setuptools]
+packages = ["biokit"]
