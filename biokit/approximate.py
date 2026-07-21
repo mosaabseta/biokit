@@ -4,7 +4,7 @@
 or deletions. For indels use :func:`biokit.distance.edit_distance`.
 """
 
-from .matching import boyer_moore_match, naive_match
+from .matching import boyer_moore_match
 
 
 def naive_approximate_match(pattern, text, max_mismatches=2, count_ops=False):
@@ -45,19 +45,16 @@ def approximate_match(pattern, text, max_mismatches=2,
     """Approximate matching via the pigeonhole principle + Boyer-Moore.
 
     Splits ``pattern`` into ``max_mismatches + 1`` disjoint segments. If the
-    pattern occurs with at most ``max_mismatches`` substitutions, then at
-    least one segment must match *exactly* -- the mismatches can spoil at
-    most ``max_mismatches`` of the segments. So we find exact hits for each
-    segment with Boyer-Moore, then verify the full pattern around each hit.
-
-    Returns the same offsets as :func:`naive_approximate_match`, usually far
-    faster.
+    pattern occurs with at most ``max_mismatches`` substitutions then at
+    least one segment must match *exactly*, since the mismatches can spoil at
+    most ``max_mismatches`` of the segments. Exact hits for each segment are
+    found with Boyer-Moore, then the full pattern is verified around each hit.
 
     Parameters
     ----------
     count_ops : bool
         If True, returns ``(offsets, alignments, comparisons, index_hits)``.
-        ``index_hits`` is the total number of exact segment hits verified --
+        ``index_hits`` counts every exact segment hit that was verified --
         note this is a 4-tuple, unlike the 3-tuple from the exact matchers.
 
     >>> approximate_match("ACGT", "ACGTACTTAAAA", max_mismatches=2)
@@ -101,16 +98,14 @@ def approximate_match(pattern, text, max_mismatches=2,
                 continue                  # would hang off either end
 
             mismatches = 0
-            # verify the part left of the segment
-            for j in range(0, start):
+            for j in range(0, start):     # verify left of the segment
                 comparisons += 1
                 if pattern[j] != text[offset + j]:
                     mismatches += 1
                     if mismatches > max_mismatches:
                         break
-            # verify the part right of the segment
             if mismatches <= max_mismatches:
-                for j in range(end, m):
+                for j in range(end, m):   # verify right of the segment
                     comparisons += 1
                     if pattern[j] != text[offset + j]:
                         mismatches += 1

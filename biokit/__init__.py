@@ -11,6 +11,8 @@ sequence    reverse complement, transcribe, translate, GC content, ...
 orf         open reading frame detection (all six frames)
 kmers       k-mer counting and repeat/motif discovery
 matching    exact matching: naive and Boyer-Moore
+approximate approximate matching with k substitutions (pigeonhole)
+indexing    k-mer Index and spaced SubseqIndex for fast candidate lookup
 distance    Hamming and edit (Levenshtein) distance
 stats       FASTA summary statistics
 blast       optional NCBI BLAST wrapper (needs Biopython)
@@ -22,10 +24,6 @@ from .io import (
     write_fasta,
     parse_fastq,
     phred_scores,
-)
-from .approximate import (
-    naive_approximate_match,
-    approximate_match,
 )
 from .sequence import (
     clean,
@@ -65,6 +63,16 @@ from .matching import (
     good_suffix_match,
     dense_bad_char_tab,
 )
+from .approximate import (
+    naive_approximate_match,
+    approximate_match,
+)
+from .indexing import (
+    Index,
+    SubseqIndex,
+    query_index,
+    query_subseq,
+)
 from .distance import (
     hamming_distance,
     edit_distance,
@@ -93,10 +101,12 @@ __all__ = [
     "z_array", "n_array", "big_l_prime_array", "big_l_array",
     "small_l_prime_array", "good_suffix_table", "good_suffix_mismatch",
     "good_suffix_match", "dense_bad_char_tab",
+    # approximate matching
+    "naive_approximate_match", "approximate_match",
+    # indexing
+    "Index", "SubseqIndex", "query_index", "query_subseq",
     # distance
     "hamming_distance", "edit_distance",
     # stats
     "summarize_fasta", "length_distribution",
-    # approximate matching
-    "naive_approximate_match", "approximate_match",
 ]

@@ -2,8 +2,8 @@
 
 import os
 import random
-import sys
 import shutil
+import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -93,9 +93,7 @@ def test_fasta_roundtrip():
         records = {"seq1": "ATGC" * 30, "seq2": "GGGCCC"}
         write_fasta(records, path, line_width=70)
         assert parse_fasta(path) == records
-
-        # line_width=0 disables wrapping and must round-trip too
-        write_fasta(records, path, line_width=0)
+        write_fasta(records, path, line_width=0)   # unwrapped must also work
         assert parse_fasta(path) == records
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
