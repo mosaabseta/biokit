@@ -52,6 +52,7 @@ from .matching import (
     naive_match,
     BoyerMoore,
     boyer_moore_match,
+    match_both_strands,
     # Boyer-Moore preprocessing internals, exposed for inspection/teaching
     z_array,
     n_array,
@@ -97,7 +98,7 @@ __all__ = [
     "count_kmers", "count_kmers_multi", "most_frequent_kmer",
     "all_max_frequency_kmers",
     # matching
-    "naive_match", "BoyerMoore", "boyer_moore_match",
+    "naive_match", "BoyerMoore", "boyer_moore_match", "match_both_strands",
     "z_array", "n_array", "big_l_prime_array", "big_l_array",
     "small_l_prime_array", "good_suffix_table", "good_suffix_mismatch",
     "good_suffix_match", "dense_bad_char_tab",

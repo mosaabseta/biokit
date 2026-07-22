@@ -348,3 +348,62 @@ def boyer_moore_match(pattern, text, alphabet="ACGTN", count_ops=False):
     if count_ops:
         return occurrences, alignments, comparisons
     return occurrences
+
+
+# ---------------------------------------------------------------------------
+# Strand-aware matching
+# ---------------------------------------------------------------------------
+def match_both_strands(pattern, text, matcher=None, alphabet="ACGTN"):
+    """Find ``pattern`` on both strands of a double-stranded DNA ``text``.
+
+    The plain matchers (:func:`naive_match`, :func:`boyer_moore_match`) are
+    string algorithms with no notion of strands -- they only search the
+    sequence exactly as given. In DNA the pattern may instead occur on the
+    complementary strand, which this function covers by additionally
+    searching for the reverse complement of the pattern.
+
+    All offsets are reported in coordinates of the **given** ``text``, so no
+    conversion is needed. Searching for ``revcomp(pattern)`` in ``text`` is
+    equivalent to searching for ``pattern`` in ``revcomp(text)``, but keeps
+    the coordinates straightforward.
+
+    Parameters
+    ----------
+    pattern, text : str
+    matcher : callable, optional
+        Exact matcher to use; defaults to :func:`boyer_moore_match`. Any
+        function with the signature ``f(pattern, text)`` returning offsets
+        works, e.g. :func:`naive_match`.
+    alphabet : str
+        Passed through to Boyer-Moore when it is the matcher.
+
+    Returns
+    -------
+    list[tuple[int, int]]
+        Sorted ``(offset, strand)`` pairs, where strand is ``+1`` for the
+        given sequence and ``-1`` for the complementary strand. A
+        palindromic pattern (one equal to its own reverse complement) is
+        reported once per site, on the ``+1`` strand only.
+
+    >>> match_both_strands("AGCATG", "TTTTCATGCTTTT")
+    [(4, -1)]
+    >>> match_both_strands("GGTACC", "AAAAGGTACCAAAA")
+    [(4, 1)]
+    """
+    from .sequence import reverse_complement
+
+    if matcher is None:
+        def matcher(p, t):
+            return boyer_moore_match(p, t, alphabet=alphabet)
+
+    forward = matcher(pattern, text)
+    results = [(offset, 1) for offset in forward]
+
+    rc = reverse_complement(pattern)
+    if rc != pattern:  # palindrome: identical hits, do not report twice
+        seen = set(forward)
+        for offset in matcher(rc, text):
+            if offset not in seen:
+                results.append((offset, -1))
+
+    return sorted(results)

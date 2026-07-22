@@ -9,6 +9,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from biokit import (
+    match_both_strands,
     reverse_complement, transcribe, translate, gc_content, base_composition,
     find_orfs, longest_orf, longest_orf_in_frame,
     count_kmers, most_frequent_kmer, all_max_frequency_kmers,
@@ -97,6 +98,17 @@ def test_fasta_roundtrip():
         assert parse_fasta(path) == records
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_match_both_strands():
+    # occurs only on the complementary strand
+    assert match_both_strands("AGCATG", "TTTTCATGCTTTT") == [(4, -1)]
+    # palindrome must not be double-counted
+    assert match_both_strands("GGTACC", "AAAAGGTACCAAAA") == [(4, 1)]
+    # one hit per strand
+    assert match_both_strands("AGCATG", "AGCATGTTCATGCT") == [(0, 1), (8, -1)]
+    # plain matchers stay strand-blind
+    assert naive_match("AGCATG", "TTTTCATGCTTTT") == []
 
 
 if __name__ == "__main__":
