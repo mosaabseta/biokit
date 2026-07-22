@@ -13,7 +13,8 @@ kmers       k-mer counting and repeat/motif discovery
 matching    exact matching: naive and Boyer-Moore
 approximate approximate matching with k substitutions (pigeonhole)
 indexing    k-mer Index and spaced SubseqIndex for fast candidate lookup
-distance    Hamming and edit (Levenshtein) distance
+distance    Hamming and edit distance (recursive, DP, approximate)
+assembly    de novo assembly: overlaps, overlap graph, greedy SCS, de Bruijn
 stats       FASTA summary statistics
 blast       optional NCBI BLAST wrapper (needs Biopython)
 """
@@ -77,13 +78,23 @@ from .indexing import (
 from .distance import (
     hamming_distance,
     edit_distance,
+    edit_distance_recursive,
+    edit_distance_matrix,
+    approximate_edit_distance,
+)
+from .assembly import (
+    overlap,
+    overlap_all_pairs,
+    greedy_scs,
+    de_bruijn_graph,
+    assemble_de_bruijn,
 )
 from .stats import (
     summarize_fasta,
     length_distribution,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # io
@@ -107,7 +118,11 @@ __all__ = [
     # indexing
     "Index", "SubseqIndex", "query_index", "query_subseq",
     # distance
-    "hamming_distance", "edit_distance",
+    "hamming_distance", "edit_distance", "edit_distance_recursive",
+    "edit_distance_matrix", "approximate_edit_distance",
+    # assembly
+    "overlap", "overlap_all_pairs", "greedy_scs",
+    "de_bruijn_graph", "assemble_de_bruijn",
     # stats
     "summarize_fasta", "length_distribution",
 ]
