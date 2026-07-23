@@ -29,11 +29,21 @@ def overlap(a, b, min_length=3):
     Returns 0 if no overlap of at least ``min_length`` exists. Only proper
     suffix/prefix overlaps are considered (the whole of ``a`` need not match).
 
+    ``overlap(s, s)`` returns ``len(s)`` -- a string trivially overlaps itself
+    fully. That is correct for a raw string operation; when building an overlap
+    graph you almost always want to skip identical reads, which
+    :func:`overlap_all_pairs` does. Note also that a *periodic* read (e.g.
+    ``"ATATAT"``) can produce short overlaps with other reads that reflect its
+    internal repeat rather than a genuine suffix/prefix join; resolving those
+    needs coverage or paired-end information beyond this function.
+
     >>> overlap("TTACGT", "CGTGTGC")
     3
     >>> overlap("TTACGT", "GTGTGC")
     0
     """
+    if min_length < 1:
+        raise ValueError("min_length must be at least 1")
     start = 0
     while True:
         start = a.find(b[:min_length], start)  # look for b's prefix in a
@@ -63,29 +73,33 @@ def overlap_all_pairs(reads, k):
     Returns
     -------
     list[tuple[str, str, int]]
-        ``(a, b, overlap_length)`` for every ordered pair ``a != b`` whose
-        suffix/prefix overlap is at least ``k``.
-
-    Notes
-    -----
-    If the same read string appears more than once this compares by value,
-    which can produce self-referential-looking edges between the duplicates;
-    de-duplicate reads first if that matters for your use.
+        ``(a, b, overlap_length)`` for every ordered pair of *distinct* read
+        strings whose suffix/prefix overlap is at least ``k``. Each ordered
+        pair appears at most once, even if a read string is supplied more
+        than once in ``reads``.
     """
+    # De-duplicate read strings: repeats would otherwise produce spurious
+    # self-edges and duplicate tuples. dict.fromkeys preserves first-seen order.
+    reads = list(dict.fromkeys(reads))
+
     index = defaultdict(set)
     for read in reads:
         for i in range(len(read) - k + 1):
             index[read[i:i + k]].add(read)
 
     edges = []
+    seen = set()
     for a in reads:
         suffix = a[-k:]
         for b in index[suffix]:
             if a == b:
                 continue
+            if (a, b) in seen:
+                continue
             olen = overlap(a, b, min_length=k)
             if olen > 0:
                 edges.append((a, b, olen))
+                seen.add((a, b))
     return edges
 
 
@@ -228,3 +242,150 @@ def assemble_de_bruijn(reads, k):
     for node in path[1:]:
         result += node[-1]
     return result
+
+
+# ---------------------------------------------------------------------------
+# Exact shortest common superstring
+# ---------------------------------------------------------------------------
+def scs(reads):
+    """Shortest common superstring of ``reads``, found by brute force.
+
+    Tries every ordering of the reads, merges each with maximum overlap, and
+    keeps the shortest result. This is guaranteed optimal but runs in O(n!)
+    time -- finding the SCS is NP-hard -- so it is only usable for a handful
+    of reads. :func:`greedy_scs` is the practical heuristic.
+
+    Returns ``None`` for an empty input.
+
+    >>> scs(["ACGGTACGAGC", "GAGCTTCGGA", "GACACGG"])
+    'GACACGGTACGAGCTTCGGA'
+    """
+    import itertools
+
+    reads = list(reads)
+    if not reads:
+        return None
+
+    shortest = None
+    for perm in itertools.permutations(reads):
+        superstring = perm[0]
+        for i in range(len(reads) - 1):
+            olen = overlap(perm[i], perm[i + 1], min_length=1)
+            superstring += perm[i + 1][olen:]
+        if shortest is None or len(superstring) < len(shortest):
+            shortest = superstring
+    return shortest
+
+
+def scs_all(reads):
+    """Return *every* shortest common superstring, not just one.
+
+    The SCS is frequently not unique: several distinct orderings can tie at
+    the minimum length. :func:`scs` returns an arbitrary one of them, which
+    is why two correct implementations can disagree. This returns the full
+    sorted list of tied solutions.
+
+    Returns
+    -------
+    (length, superstrings) : tuple[int, list[str]]
+
+    >>> length, sols = scs_all(["ABC", "BCA", "CAB"])
+    >>> length
+    5
+    >>> sols
+    ['ABCAB', 'BCABC', 'CABCA']
+    """
+    import itertools
+
+    reads = list(reads)
+    if not reads:
+        return 0, []
+
+    found = {}
+    for perm in itertools.permutations(reads):
+        superstring = perm[0]
+        for i in range(len(reads) - 1):
+            olen = overlap(perm[i], perm[i + 1], min_length=1)
+            superstring += perm[i + 1][olen:]
+        found.setdefault(len(superstring), set()).add(superstring)
+
+    best = min(found)
+    return best, sorted(found[best])
+
+
+# ---------------------------------------------------------------------------
+# Assembling a genome from reads
+# ---------------------------------------------------------------------------
+def assemble_greedy_contigs(reads, min_overlap=3):
+    """Assemble ``reads`` into one or more contigs by greedy merging.
+
+    Like :func:`greedy_scs`, but instead of concatenating whatever cannot be
+    merged, the unmergeable pieces are returned separately. That is what real
+    assembly produces: a set of **contigs** (contiguous assembled stretches),
+    not a single sequence, because coverage gaps and repeats break the graph.
+
+    Returns
+    -------
+    list[str]
+        Contigs, longest first.
+
+    >>> seq = "ACGTTGCATTGCAAGGCTA"
+    >>> reads = [seq[i:i+8] for i in range(len(seq)-7)]
+    >>> assemble_greedy_contigs(reads, 4) == [seq]
+    True
+    """
+    reads = list(dict.fromkeys(reads))  # duplicates add nothing here
+    a, b, olen = _pick_max_overlap(reads, min_overlap)
+    while olen > 0:
+        reads.remove(a)
+        reads.remove(b)
+        reads.append(a + b[olen:])
+        a, b, olen = _pick_max_overlap(reads, min_overlap)
+    return sorted(reads, key=len, reverse=True)
+
+
+def assemble_from_reads(reads, k=None, min_overlap=3, method="de_bruijn"):
+    """Assemble a sequence from ``reads``, the practical entry point.
+
+    Parameters
+    ----------
+    reads : sequence[str]
+    k : int, optional
+        k-mer size for the de Bruijn method. Defaults to
+        ``min(len(read)) - 1``, capped at 31.
+    min_overlap : int
+        Minimum overlap for the greedy method.
+    method : {"de_bruijn", "greedy"}
+        ``"de_bruijn"`` builds a k-mer graph and walks an Eulerian path --
+        fast, and the basis of real short-read assemblers, but it needs a
+        complete k-mer spectrum and returns ``None`` if none exists.
+        ``"greedy"`` merges by largest overlap and always returns contigs,
+        but is a heuristic and slower.
+
+    Returns
+    -------
+    str or list[str] or None
+        A single sequence for ``"de_bruijn"`` (or ``None`` if no Eulerian
+        path exists), a list of contigs for ``"greedy"``.
+
+    Notes
+    -----
+    Both methods are strand-blind: a real sequencing run yields reads from
+    both strands, so reverse-complement the reads (or their partners) before
+    assembling genuine data.
+    """
+    reads = [r for r in reads if r]
+    if not reads:
+        return None if method == "de_bruijn" else []
+
+    if method == "greedy":
+        return assemble_greedy_contigs(reads, min_overlap)
+
+    if method != "de_bruijn":
+        raise ValueError("method must be 'de_bruijn' or 'greedy'")
+
+    if k is None:
+        k = min(min(len(r) for r in reads) - 1, 31)
+    if k < 2:
+        raise ValueError("reads are too short to assemble (need k >= 2)")
+    return assemble_de_bruijn(reads, k)

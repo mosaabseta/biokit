@@ -83,6 +83,10 @@ from .distance import (
     approximate_edit_distance,
 )
 from .assembly import (
+    scs,
+    scs_all,
+    assemble_greedy_contigs,
+    assemble_from_reads,
     overlap,
     overlap_all_pairs,
     greedy_scs,
@@ -94,7 +98,7 @@ from .stats import (
     length_distribution,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # io
@@ -121,8 +125,9 @@ __all__ = [
     "hamming_distance", "edit_distance", "edit_distance_recursive",
     "edit_distance_matrix", "approximate_edit_distance",
     # assembly
-    "overlap", "overlap_all_pairs", "greedy_scs",
+    "overlap", "overlap_all_pairs", "greedy_scs", "scs", "scs_all",
     "de_bruijn_graph", "assemble_de_bruijn",
+    "assemble_greedy_contigs", "assemble_from_reads",
     # stats
     "summarize_fasta", "length_distribution",
 ]

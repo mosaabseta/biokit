@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from biokit import (
+    scs, scs_all, assemble_greedy_contigs, assemble_from_reads,
     edit_distance, edit_distance_recursive, edit_distance_matrix,
     approximate_edit_distance,
     overlap, overlap_all_pairs, greedy_scs,
@@ -110,6 +111,65 @@ def test_de_bruijn_graph_shape():
     nodes, edges = de_bruijn_graph(["ACGT"], 3)
     assert nodes == {"AC", "CG", "GT"}
     assert edges == [("AC", "CG"), ("CG", "GT")]
+
+
+def test_scs_exact():
+    assert scs(["ACGGTACGAGC", "GAGCTTCGGA", "GACACGG"]) == "GACACGGTACGAGCTTCGGA"
+
+
+def test_scs_all_ties():
+    length, sols = scs_all(["ABC", "BCA", "CAB"])
+    assert length == 5
+    assert sols == ["ABCAB", "BCABC", "CABCA"]
+    assert scs(["ABC", "BCA", "CAB"]) in sols   # scs returns one of the ties
+
+
+def test_scs_never_shorter_than_greedy():
+    """Exact SCS is optimal, so it is never longer than the greedy result."""
+    random.seed(21)
+    for _ in range(100):
+        seq = "".join(random.choice("ACGT") for _ in range(random.randint(10, 16)))
+        reads = [seq[i:i + 5] for i in range(0, len(seq) - 4, 3)][:5]
+        assert len(scs(reads)) <= len(greedy_scs(reads, k=1))
+
+
+def test_assemble_greedy_contigs():
+    seq = "ACGTTGCATTGCAAGGCTA"
+    reads = [seq[i:i + 8] for i in range(len(seq) - 7)]
+    assert assemble_greedy_contigs(reads, 4) == [seq]
+
+
+def test_assemble_greedy_contigs_gap_gives_two():
+    """A coverage gap must yield separate contigs, not one fused sequence."""
+    left = "ACGTTGCATTG"
+    right = "GGGAAACCCTT"
+    reads = ([left[i:i + 6] for i in range(len(left) - 5)] +
+             [right[i:i + 6] for i in range(len(right) - 5)])
+    contigs = assemble_greedy_contigs(reads, 4)
+    assert len(contigs) == 2
+    assert set(contigs) == {left, right}
+
+
+def test_assemble_from_reads_de_bruijn():
+    seq = "ACGTTGCATTGCAAGGCTA"
+    k = 7
+    kmers = [seq[i:i + k] for i in range(len(seq) - k + 1)]
+    assert assemble_from_reads(kmers, k=k) == seq
+
+
+def test_assemble_from_reads_greedy():
+    seq = "ACGTTGCATTGCAAGGCTA"
+    reads = [seq[i:i + 8] for i in range(len(seq) - 7)]
+    assert assemble_from_reads(reads, min_overlap=4, method="greedy") == [seq]
+
+
+def test_assemble_from_reads_bad_method():
+    try:
+        assemble_from_reads(["ACGT"], method="nope")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
 
 
 if __name__ == "__main__":
