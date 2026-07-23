@@ -379,7 +379,7 @@ def assemble_from_reads(reads, k=None, min_overlap=3, method="de_bruijn"):
         return None if method == "de_bruijn" else []
 
     if method == "greedy":
-        return assemble_greedy_contigs(reads, min_overlap)
+        return assemble_greedy_contigs_indexed(reads, min_overlap)
 
     if method != "de_bruijn":
         raise ValueError("method must be 'de_bruijn' or 'greedy'")
@@ -389,3 +389,235 @@ def assemble_from_reads(reads, k=None, min_overlap=3, method="de_bruijn"):
     if k < 2:
         raise ValueError("reads are too short to assemble (need k >= 2)")
     return assemble_de_bruijn(reads, k)
+
+
+# ---------------------------------------------------------------------------
+# Index-accelerated greedy assembly
+# ---------------------------------------------------------------------------
+def assemble_greedy_contigs_indexed(reads, min_overlap=30):
+    """Greedy assembly accelerated with a k-mer index and a priority queue.
+
+    Produces the same contigs as :func:`assemble_greedy_contigs` but without
+    the cubic rescan. :func:`_pick_max_overlap` re-compares every pair after
+    every merge, costing O(n^3) overlap calls; here the overlap graph is built
+    once with a k-mer index, edges are kept in a max-heap, and after each merge
+    only the edges touching the new node are recomputed.
+
+    Parameters
+    ----------
+    reads : sequence[str]
+    min_overlap : int
+        Minimum overlap to merge on; also the k-mer size for the index. For
+        100 bp reads, 30-40 is a sensible range -- low values (< 10) admit
+        chance overlaps between unrelated reads and corrupt the assembly.
+
+    Returns
+    -------
+    list[str]
+        Contigs, longest first.
+
+    Notes
+    -----
+    Merging is greedy and therefore a heuristic: it does not guarantee the
+    shortest common superstring, and results can vary with tie-breaking.
+
+    >>> seq = "ACGTTGCATTGCAAGGCTA"
+    >>> reads = [seq[i:i+8] for i in range(len(seq)-7)]
+    >>> assemble_greedy_contigs_indexed(reads, 4) == [seq]
+    True
+    """
+    import heapq
+
+    k = min_overlap
+    if k < 1:
+        raise ValueError("min_overlap must be at least 1")
+
+    nodes = {}          # id -> sequence
+    for i, r in enumerate(dict.fromkeys(reads)):
+        if len(r) >= k:
+            nodes[i] = r
+    if not nodes:
+        return sorted(dict.fromkeys(reads), key=len, reverse=True)
+
+    index = defaultdict(set)          # k-mer -> ids of nodes containing it
+
+    def add_to_index(node_id):
+        seq = nodes[node_id]
+        for i in range(len(seq) - k + 1):
+            index[seq[i:i + k]].add(node_id)
+
+    def drop_from_index(node_id, seq):
+        for i in range(len(seq) - k + 1):
+            index[seq[i:i + k]].discard(node_id)
+
+    for node_id in nodes:
+        add_to_index(node_id)
+
+    heap = []
+
+    def push_edges_for(node_id):
+        """Queue edges out of and into ``node_id`` against live partners."""
+        seq = nodes[node_id]
+        # outgoing: partners whose prefix matches this node's suffix
+        for other in list(index.get(seq[-k:], ())):
+            if other == node_id or other not in nodes:
+                continue
+            olen = overlap(seq, nodes[other], min_length=k)
+            if olen > 0:
+                heapq.heappush(heap, (-olen, node_id, other))
+        # incoming: partners whose suffix matches this node's prefix
+        for other in list(index.get(seq[:k], ())):
+            if other == node_id or other not in nodes:
+                continue
+            olen = overlap(nodes[other], seq, min_length=k)
+            if olen > 0:
+                heapq.heappush(heap, (-olen, other, node_id))
+
+    for node_id in list(nodes):
+        push_edges_for(node_id)
+
+    next_id = max(nodes) + 1 if nodes else 0
+
+    while heap:
+        neg_olen, a_id, b_id = heapq.heappop(heap)
+        # lazy deletion: skip edges whose endpoints were already merged away
+        if a_id not in nodes or b_id not in nodes or a_id == b_id:
+            continue
+        a_seq, b_seq = nodes[a_id], nodes[b_id]
+        # the stored length may be stale; re-verify before merging
+        olen = overlap(a_seq, b_seq, min_length=k)
+        if olen != -neg_olen or olen == 0:
+            if olen > 0:
+                heapq.heappush(heap, (-olen, a_id, b_id))
+            continue
+
+        drop_from_index(a_id, a_seq)
+        drop_from_index(b_id, b_seq)
+        del nodes[a_id]
+        del nodes[b_id]
+
+        merged_id = next_id
+        next_id += 1
+        nodes[merged_id] = a_seq + b_seq[olen:]
+        add_to_index(merged_id)
+        push_edges_for(merged_id)
+
+    leftovers = [r for r in dict.fromkeys(reads) if len(r) < k]
+    return sorted(list(nodes.values()) + leftovers, key=len, reverse=True)
+
+
+def greedy_scs_indexed(reads, min_overlap=30):
+    """Index-accelerated counterpart of :func:`greedy_scs`.
+
+    Same greedy merging strategy and same single-superstring output, but
+    driven by the k-mer index and heap used in
+    :func:`assemble_greedy_contigs_indexed` instead of rescanning every pair
+    after each merge. Anything that cannot be merged is concatenated, exactly
+    as :func:`greedy_scs` does.
+
+    Note that ``min_overlap`` doubles as the index k-mer size, so unlike
+    :func:`greedy_scs` (whose ``k`` defaults to 1) it cannot be set below 1
+    and very small values are impractical.
+
+    >>> seq = "ACGTTGCATTGCAAGGCTA"
+    >>> reads = [seq[i:i+8] for i in range(len(seq)-7)]
+    >>> greedy_scs_indexed(reads, 4) == seq
+    True
+    """
+    return "".join(assemble_greedy_contigs_indexed(reads, min_overlap))
+
+
+def de_bruijn_contigs(reads, k):
+    """Assemble ``reads`` into contigs via maximal non-branching paths.
+
+    The robust de Bruijn counterpart to :func:`assemble_de_bruijn`. Rather
+    than demanding a single Eulerian path through the whole graph -- which
+    real data rarely admits, so that function returns ``None`` -- this walks
+    every **maximal non-branching path** (a run of nodes each with in-degree
+    and out-degree exactly 1). Those paths are the *unitigs* that real
+    assemblers emit: stretches the graph proves are unambiguous, broken
+    wherever a repeat or coverage gap creates a branch.
+
+    Always returns contigs, never ``None``.
+
+    Parameters
+    ----------
+    reads : sequence[str]
+    k : int
+        k-mer size. For 100 bp reads, 25-31 is a good range.
+
+    Returns
+    -------
+    list[str]
+        Contigs, longest first.
+
+    >>> seq = "ACGTTGCATTGCAAGGCTA"
+    >>> reads = [seq[i:i+8] for i in range(len(seq)-7)]
+    >>> de_bruijn_contigs(reads, 7) == [seq]
+    True
+    """
+    # Build from DISTINCT k-mers. de_bruijn_graph emits one edge per k-mer
+    # *occurrence*, so overlapping reads create parallel edges that would
+    # inflate every degree and make nothing look non-branching. Coverage
+    # multiplicity belongs in a separate depth statistic, not in the topology.
+    kmers = set()
+    for read in reads:
+        for i in range(len(read) - k + 1):
+            kmers.add(read[i:i + k])
+    edges = [(kmer[:-1], kmer[1:]) for kmer in sorted(kmers)]
+    if not edges:
+        return []
+
+    adj = defaultdict(list)
+    indeg = defaultdict(int)
+    outdeg = defaultdict(int)
+    for left, right in edges:
+        adj[left].append(right)
+        outdeg[left] += 1
+        indeg[right] += 1
+
+    all_nodes = set(indeg) | set(outdeg)
+
+    def one_in_one_out(node):
+        return indeg[node] == 1 and outdeg[node] == 1
+
+    paths = []
+    # Every maximal non-branching path starts at a node that is not 1-in-1-out
+    for node in all_nodes:
+        if one_in_one_out(node):
+            continue
+        for nxt in adj[node]:
+            path = [node, nxt]
+            while one_in_one_out(nxt):
+                nxt = adj[nxt][0]
+                path.append(nxt)
+            paths.append(path)
+
+    # Whatever remains untouched is an isolated cycle of 1-in-1-out nodes
+    covered = set()
+    for path in paths:
+        covered.update(path)
+    for node in all_nodes:
+        if node in covered or not one_in_one_out(node):
+            continue
+        cycle = [node]
+        covered.add(node)
+        nxt = adj[node][0]
+        while nxt != node:
+            cycle.append(nxt)
+            covered.add(nxt)
+            nxt = adj[nxt][0]
+        cycle.append(node)
+        paths.append(cycle)
+
+    contigs = []
+    for path in paths:
+        seq = path[0]
+        for node in path[1:]:
+            seq += node[-1]
+        contigs.append(seq)
+    return sorted(contigs, key=len, reverse=True)
+
+
+#: Backwards-compatible alias for :func:`assemble_greedy_contigs_indexed`.
+assemble_greedy_indexed = assemble_greedy_contigs_indexed

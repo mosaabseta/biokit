@@ -86,6 +86,10 @@ from .assembly import (
     scs,
     scs_all,
     assemble_greedy_contigs,
+    assemble_greedy_indexed,
+    assemble_greedy_contigs_indexed,
+    greedy_scs_indexed,
+    de_bruijn_contigs,
     assemble_from_reads,
     overlap,
     overlap_all_pairs,
@@ -98,7 +102,7 @@ from .stats import (
     length_distribution,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 
 __all__ = [
     # io
@@ -128,6 +132,9 @@ __all__ = [
     "overlap", "overlap_all_pairs", "greedy_scs", "scs", "scs_all",
     "de_bruijn_graph", "assemble_de_bruijn",
     "assemble_greedy_contigs", "assemble_from_reads",
+    # assembly (index-accelerated)
+    "greedy_scs_indexed", "assemble_greedy_contigs_indexed",
+    "assemble_greedy_indexed", "de_bruijn_contigs",
     # stats
     "summarize_fasta", "length_distribution",
 ]

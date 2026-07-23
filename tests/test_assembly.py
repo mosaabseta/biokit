@@ -7,7 +7,9 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from biokit import (
-    scs, scs_all, assemble_greedy_contigs, assemble_from_reads,
+    scs, scs_all, assemble_greedy_contigs, assemble_greedy_indexed,
+    assemble_greedy_contigs_indexed, greedy_scs_indexed, de_bruijn_contigs,
+    assemble_from_reads,
     edit_distance, edit_distance_recursive, edit_distance_matrix,
     approximate_edit_distance,
     overlap, overlap_all_pairs, greedy_scs,
@@ -170,6 +172,77 @@ def test_assemble_from_reads_bad_method():
         pass
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_indexed_matches_classic_greedy():
+    """The fast assembler must reproduce the classic greedy result."""
+    random.seed(17)
+    for _ in range(200):
+        glen = random.randint(40, 120)
+        g = "".join(random.choice("ACGT") for _ in range(glen))
+        rl = random.randint(8, 15)
+        n = random.randint(5, 20)
+        reads = [g[i:i + rl]
+                 for i in sorted(random.sample(range(glen - rl),
+                                               min(n, glen - rl)))]
+        mo = random.randint(3, rl - 2)
+        assert assemble_greedy_indexed(reads, mo) == \
+               assemble_greedy_contigs(reads, mo)
+
+
+def test_indexed_rejects_bad_min_overlap():
+    try:
+        assemble_greedy_indexed(["ACGT"], 0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_greedy_scs_indexed_matches():
+    seq = "ACGTTGCATTGCAAGGCTA"
+    reads = [seq[i:i + 8] for i in range(len(seq) - 7)]
+    assert greedy_scs_indexed(reads, 4) == seq
+
+
+def test_alias_is_same_function():
+    assert assemble_greedy_indexed is assemble_greedy_contigs_indexed
+
+
+def test_de_bruijn_contigs_single():
+    seq = "ACGTTGCATTGCAAGGCTA"
+    reads = [seq[i:i + 8] for i in range(len(seq) - 7)]
+    assert de_bruijn_contigs(reads, 7) == [seq]
+
+
+def test_de_bruijn_contigs_breaks_at_repeat():
+    """Too small a k cannot resolve a repeat, so the graph must break up."""
+    seq = "ACGTTGCATTGCAAGGCTA"          # 'TTGCA' occurs twice
+    reads = [seq[i:i + 8] for i in range(len(seq) - 7)]
+    assert len(de_bruijn_contigs(reads, 5)) > 1   # repeat unresolved
+    assert de_bruijn_contigs(reads, 7) == [seq]   # k past the repeat
+
+
+def test_de_bruijn_contigs_preserves_kmers():
+    random.seed(23)
+    for _ in range(150):
+        glen = random.randint(40, 150)
+        g = "".join(random.choice("ACGT") for _ in range(glen))
+        rl = random.randint(10, 20)
+        k = random.randint(5, rl - 2)
+        reads = [g[i:i + rl] for i in range(glen - rl + 1)]
+        contigs = de_bruijn_contigs(reads, k)
+        assert contigs
+        want = {r[i:i + k] for r in reads for i in range(len(r) - k + 1)}
+        got = {c[i:i + k] for c in contigs for i in range(len(c) - k + 1)}
+        assert want <= got
+
+
+def test_de_bruijn_contigs_never_none():
+    """Unlike assemble_de_bruijn, this always returns contigs."""
+    reads = ["ACGTAC", "TTTTGG"]          # disconnected, no Eulerian path
+    assert assemble_de_bruijn(reads, 4) is None
+    assert len(de_bruijn_contigs(reads, 4)) >= 2
 
 
 if __name__ == "__main__":
